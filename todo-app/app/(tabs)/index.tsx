@@ -1,17 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, TextInput, Button, Pressable } from 'react-native';
 import axios from 'axios';
+import { useForm, Controller } from 'react-hook-form';
 
 export default function App() {
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const { control, handleSubmit, reset } = useForm();
 
   useEffect(() => {
     axios.get('https://dummyjson.com/todos')
       .then(response => {
         const updatedTodos = response.data.todos.map(todo => ({
           ...todo,
-          localCompleted: todo.completed
+          localCompleted: todo.completed,
+          priority: 'low',
+          date: '2025-01-01',
+          status: 'to-do'
         }));
         setTodos(updatedTodos);
         setLoading(false);
@@ -23,17 +29,36 @@ export default function App() {
   }, []);
 
   const toggleCompleted = (id) => {
-    setTodos(todos.map(todo => 
-      todo.id === id ? { ...todo, localCompleted: !todo.localCompleted } : todo
+    setTodos(todos.map(todo =>
+      todo.id === id
+        ? { ...todo, localCompleted: !todo.localCompleted, status: !todo.localCompleted ? 'done' : 'to-do' }
+        : todo
     ));
+  };
+
+  const onSubmit = data => {
+    const newTodo = {
+      id: Date.now(), 
+      todo: data.title,
+      localCompleted: false,
+      status: 'to-do',
+      priority: data.priority,
+      date: data.date
+    };
+    setTodos([newTodo, ...todos]);
+    reset(); 
   };
 
   const renderItem = ({ item }) => (
     <TouchableOpacity onPress={() => toggleCompleted(item.id)}>
       <View style={[styles.item, item.localCompleted && styles.completedItem]}>
-        <Text style={[styles.title, item.localCompleted && styles.completedText]}>
-          {item.todo}
-        </Text>
+        <View>
+          <Text style={[styles.title, item.localCompleted && styles.completedText]}>
+            {item.todo}
+          </Text>
+          <Text style={styles.meta}>Priority: {item.priority} | Due: {item.date}</Text>
+        </View>
+        <Text style={styles.time}>{item.localCompleted ? '✓' : '⏳'}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -41,8 +66,55 @@ export default function App() {
   return (
     <View style={styles.container}>
       <Text style={styles.header}>TODO List</Text>
-      <Text style={styles.date}>4th March 2018</Text>
-
+      <View style={styles.form}>
+        <Controller
+          control={control}
+          name="title"
+          rules={{ required: true }}
+          render={({ field: { onChange, value } }) => (
+            <TextInput
+              style={styles.input}
+              placeholder="Task Title"
+              onChangeText={onChange}
+              value={value}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="date"
+          render={({ field: { onChange, value } }) => (
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD"
+              onChangeText={onChange}
+              value={value}
+            />
+          )}
+        />
+        <Text style={styles.label}>Priority</Text>
+      <View style={styles.priorityContainer}>
+        {['low', 'medium', 'high'].map((level) => (
+          <Controller
+            key={level}
+            control={control}
+            name="priority"
+            render={({ field: { onChange, value } }) => (
+              <Pressable
+                onPress={() => onChange(level)}
+                style={[
+                  styles.priorityButton,
+                  value === level && styles.selected,
+                ]}
+              >
+                <Text style={styles.priorityText}>{level}</Text>
+              </Pressable>
+            )}
+          />
+        ))}
+      </View>
+        <Button title="Add Task" onPress={handleSubmit(onSubmit)} />
+      </View>
       {loading ? (
         <ActivityIndicator size="large" color="#0000ff" />
       ) : (
@@ -55,7 +127,6 @@ export default function App() {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -73,6 +144,16 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'center',
     marginBottom: 20,
+  },
+  form: {
+    marginBottom: 20,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 10,
   },
   item: {
     backgroundColor: '#f9f9f9',
@@ -95,8 +176,25 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
     color: '#666',
   },
+  meta: {
+    fontSize: 12,
+    color: '#777',
+    marginTop: 4,
+  },
   time: {
-    fontSize: 14,
-    color: '#999',
+    fontSize: 18,
+  },
+    priorityContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+  },
+  priorityButton: {
+    padding: 10,
+    backgroundColor: '#eee',
+    borderRadius: 6,
+  },
+   priorityText: {
+    textTransform: 'capitalize',
   },
 });
