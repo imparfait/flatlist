@@ -3,64 +3,134 @@ import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, 
 import axios from 'axios';
 import { useForm, Controller } from 'react-hook-form';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SQLite from 'expo-sqlite';
 
 export default function App() {
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const { control, handleSubmit, reset } = useForm();
+  const db = SQLite.openDatabaseSync('todo.db');
+
+  ///////  Async Storage
+  // useEffect(() => {
+    // const loadTodos = async () => {
+    //   try {
+    //     const saved = await AsyncStorage.getItem('todos');
+    //     if (saved) {
+    //       setTodos(JSON.parse(saved));
+    //     } else {
+    //       const response = await axios.get('https://dummyjson.com/todos');
+    //       const updatedTodos = response.data.todos.map(todo => ({
+    //         ...todo,
+    //         localCompleted: todo.completed,
+    //         priority: 'low',
+    //         date: '2025-01-01',
+    //         status: 'to-do',
+    //       }));
+    //       setTodos(updatedTodos);
+    //     }
+    //   } catch (error) {
+    //     console.error('Loading error:', error);
+    //   } finally {
+    //     setLoading(false);
+    //   }
+    // };
+    // loadTodos();
+  // }, []);
+
+  // useEffect(() => {
+  //   AsyncStorage.setItem('todos', JSON.stringify(todos)).catch((e) =>
+  //     console.error('Saving error:', e)
+  //   );
+  // }, [todos]);
+
+  // const toggleCompleted = (id) => {
+    // setTodos(todos.map(todo =>
+    //   todo.id === id
+    //     ? { ...todo, localCompleted: !todo.localCompleted, status: !todo.localCompleted ? 'done' : 'to-do' }
+    //     : todo
+    // ));
+  // };
+
+  // const onSubmit = data => {
+    // const newTodo = {
+    //   id: Date.now(), 
+    //   todo: data.title,
+    //   localCompleted: false,
+    //   status: 'to-do',
+    //   priority: data.priority,
+    //   date: data.date
+    // };
+    // setTodos([newTodo, ...todos]);
+    // reset(); 
+  // };
 
   useEffect(() => {
-    const loadTodos = async () => {
-      try {
-        const saved = await AsyncStorage.getItem('todos');
-        if (saved) {
-          setTodos(JSON.parse(saved));
-        } else {
-          const response = await axios.get('https://dummyjson.com/todos');
-          const updatedTodos = response.data.todos.map(todo => ({
-            ...todo,
-            localCompleted: todo.completed,
-            priority: 'low',
-            date: '2025-01-01',
-            status: 'to-do',
-          }));
-          setTodos(updatedTodos);
-        }
-      } catch (error) {
-        console.error('Loading error:', error);
-      } finally {
-        setLoading(false);
-      }
+    const setup = async () => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS todos (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          date TEXT,
+          priority TEXT,
+          status TEXT,
+          completed INTEGER
+        );
+      `);
+      const rows = await db.getAllAsync('SELECT * FROM todos');
+      const todosFromDb = rows.map(row => ({
+        id: row.id,
+        todo: row.title,
+        date: row.date,
+        priority: row.priority,
+        status: row.status,
+        localCompleted: row.completed === 1,
+      }));
+      setTodos(todosFromDb);
+      setLoading(false);
     };
-    loadTodos();
+    setup();
   }, []);
 
-  useEffect(() => {
-    AsyncStorage.setItem('todos', JSON.stringify(todos)).catch((e) =>
-      console.error('Saving error:', e)
-    );
-  }, [todos]);
-
-  const toggleCompleted = (id) => {
-    setTodos(todos.map(todo =>
-      todo.id === id
-        ? { ...todo, localCompleted: !todo.localCompleted, status: !todo.localCompleted ? 'done' : 'to-do' }
-        : todo
-    ));
-  };
-
-  const onSubmit = data => {
+  const onSubmit = async (data) => {
     const newTodo = {
-      id: Date.now(), 
-      todo: data.title,
-      localCompleted: false,
-      status: 'to-do',
+      title: data.title,
+      date: data.date,
       priority: data.priority,
-      date: data.date
+      status: 'to-do',
+      completed: 0,
     };
-    setTodos([newTodo, ...todos]);
-    reset(); 
+    const result = await db.runAsync(
+      `INSERT INTO todos (title, date, priority, status, completed) VALUES (?, ?, ?, ?, ?)`,
+      newTodo.title,
+      newTodo.date,
+      newTodo.priority,
+      newTodo.status,
+      newTodo.completed
+    );
+    const insertedTodo = {
+      id: result.lastInsertRowId,
+      todo: newTodo.title,
+      date: newTodo.date,
+      priority: newTodo.priority,
+      status: newTodo.status,
+      localCompleted: false,
+    };
+    setTodos([insertedTodo, ...todos]);
+    reset();
+  };
+  const toggleCompleted = async (id) => {
+    const todo = todos.find(t => t.id === id);
+    const newCompleted = !todo.localCompleted;
+    await db.runAsync(
+      'UPDATE todos SET completed = ?, status = ? WHERE id = ?',
+      newCompleted ? 1 : 0,
+      newCompleted ? 'done' : 'to-do',
+      id
+    );
+    setTodos(todos.map(t =>
+      t.id === id ? { ...t, localCompleted: newCompleted, status: newCompleted ? 'done' : 'to-do' } : t
+    ));
   };
 
   const renderItem = ({ item }) => (
@@ -207,6 +277,9 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: '#eee',
     borderRadius: 6,
+  },
+  selected: {
+    backgroundColor: '#add8e6',
   },
    priorityText: {
     textTransform: 'capitalize',
