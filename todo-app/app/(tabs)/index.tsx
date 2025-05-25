@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, TextInput, Button, Pressable } from 'react-native';
 import axios from 'axios';
 import { useForm, Controller } from 'react-hook-form';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function App() {
   const [todos, setTodos] = useState([]);
@@ -10,23 +11,36 @@ export default function App() {
   const { control, handleSubmit, reset } = useForm();
 
   useEffect(() => {
-    axios.get('https://dummyjson.com/todos')
-      .then(response => {
-        const updatedTodos = response.data.todos.map(todo => ({
-          ...todo,
-          localCompleted: todo.completed,
-          priority: 'low',
-          date: '2025-01-01',
-          status: 'to-do'
-        }));
-        setTodos(updatedTodos);
+    const loadTodos = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('todos');
+        if (saved) {
+          setTodos(JSON.parse(saved));
+        } else {
+          const response = await axios.get('https://dummyjson.com/todos');
+          const updatedTodos = response.data.todos.map(todo => ({
+            ...todo,
+            localCompleted: todo.completed,
+            priority: 'low',
+            date: '2025-01-01',
+            status: 'to-do',
+          }));
+          setTodos(updatedTodos);
+        }
+      } catch (error) {
+        console.error('Loading error:', error);
+      } finally {
         setLoading(false);
-      })
-      .catch(error => {
-        console.error('Error fetching todos:', error);
-        setLoading(false);
-      });
+      }
+    };
+    loadTodos();
   }, []);
+
+  useEffect(() => {
+    AsyncStorage.setItem('todos', JSON.stringify(todos)).catch((e) =>
+      console.error('Saving error:', e)
+    );
+  }, [todos]);
 
   const toggleCompleted = (id) => {
     setTodos(todos.map(todo =>
