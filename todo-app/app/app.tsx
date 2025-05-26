@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, TextInput, Button, Pressable } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, TextInput, Button, Pressable, Platform } from 'react-native';
 import axios from 'axios';
 import { useForm, Controller } from 'react-hook-form';
 import * as SQLite from 'expo-sqlite';
 import {  useDispatch,useSelector  } from 'react-redux';
 import { setIncompleteCount } from './todoSlice';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 
 export default function Main() {
   const [todos, setTodos] = useState([]);
@@ -42,11 +44,43 @@ export default function Main() {
       }));
       setTodos(todosFromDb);
       dispatch(setIncompleteCount(todosFromDb.filter(t => !t.localCompleted).length));
+      registerForPushNotificationsAsync();
       setLoading(false);
     };
     setup();
   }, []);
+  useEffect(() => {
+     Notifications.setNotificationCategoryAsync('deadlineActions', [
+        {
+          identifier: 'show',
+          buttonTitle: 'Show',
+          options: { opensAppToForeground: true },
+        },
+        {
+          identifier: 'delete',
+          buttonTitle: 'Delete',
+          destructive: true,
+        },
+    ]);
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const action = response.actionIdentifier;
+      const data = response.notification.request.content.data;
+      if (action === 'show') {
+        console.log('User chose to view task:', data.id);
+      } else if (action === 'delete') {
+        deleteTodoById(data.id);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
+  const deleteTodoById = async (id) => {
+      await db.runAsync(`DELETE FROM todos WHERE id = ?`, id);
+      const updated = todos.filter(t => t.id !== id);
+      setTodos(updated);
+      dispatch(setIncompleteCount(updated.filter(t => !t.localCompleted).length));
+    };
+    
   const onSubmit = async (data) => {
     try {
       const newTodo = {
@@ -74,6 +108,7 @@ export default function Main() {
       };
       const updatedTodos = [insertedTodo, ...todos];
       setTodos(updatedTodos);
+      await scheduleNotification(insertedTodo);
       dispatch(setIncompleteCount(updatedTodos.filter(t => !t.localCompleted).length));
       reset(); 
     } catch (error) {
@@ -133,7 +168,48 @@ export default function Main() {
     );
   };
 
- //const selectedPriority = watch('priority');
+  const registerForPushNotificationsAsync = async () => {
+     let token;
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      alert('Failed to get push token for notifications!');
+      return;
+    }
+  } else {
+    alert('Must use physical device for Push Notifications');
+  }
+  if (Platform.OS === 'android') {
+    Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.HIGH,
+    });
+  }
+  return token;
+  };
+
+  const convertToNotificationDate = (dateStr) => {
+    return new Date(`${dateStr}T09:00:00`);
+  };
+
+  const scheduleNotification = async (todo) => {
+    const trigger = convertToNotificationDate(todo.date);
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Deadline today!',
+        body: `Your task "${todo.title}" is due today.`,
+        data: { id: todo.id },
+        categoryIdentifier: 'deadlineActions',
+      },
+      trigger,
+    });
+    return id;
+  };
 
   return (
     <View style={styles.container}>
