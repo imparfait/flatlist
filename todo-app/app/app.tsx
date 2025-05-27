@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, TextInput, Button, Pressable, Platform } from 'react-native';
-import axios from 'axios';
 import { useForm, Controller } from 'react-hook-form';
 import * as SQLite from 'expo-sqlite';
 import {  useDispatch,useSelector  } from 'react-redux';
 import { setIncompleteCount } from './todoSlice';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import ProgressBar from './ProgressBar';
 
 export default function Main() {
   const [todos, setTodos] = useState([]);
@@ -272,6 +272,7 @@ export default function Main() {
             keyExtractor={item => item.id.toString()}
           />
         )}
+        <ProgressBar/>
         <BottomMenu />
       </View> 
   );}
